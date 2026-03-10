@@ -2,8 +2,6 @@
   <img src="img\Revuhl.png" alt="Revuhl Logo" width="200">
 </p>
 
-<h1 align="center">Revuhl</h1>
-
 <p align="center">
   A fast, self-contained reverse shell generator for authorized penetration testing.
 </p>
